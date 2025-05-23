@@ -1,0 +1,38 @@
+{
+    "API_TOKEN": "YOUR_API_TOKEN",
+    "target_chat": "TARGET_CHAT",
+    "texts": {
+        "greeting": "a",
+        "application": "b",
+        "report": "c",
+        "collaboration": "d",
+        "staff": "e",
+        "event": "f",
+        "reward": "g",
+        "other": "h",
+        "confirmation": "i"
+    },
+    "emojis": {
+        "application": {
+            "emoji": "🤔"
+        },
+        "report": {
+            "emoji": "e"
+        },
+        "collaboration": {
+            "emoji": "q"
+        },
+        "staff": {
+            "emoji": "b"
+        },
+        "event": {
+            "emoji": "d"
+        },
+        "reward": {
+            "emoji": "l"
+        },
+        "other": {
+            "emoji": "a"
+        }
+    }
+}
