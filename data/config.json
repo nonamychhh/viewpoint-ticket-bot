@@ -1,6 +1,9 @@
 {
     "API_TOKEN": "YOUR_API_TOKEN",
     "target_chat": "TARGET_CHAT",
+    "chat_mode": "single",
+    "target_topic": 2,
+    "cooldown": "30m",
     "texts": {
         "greeting": "a",
         "application": "b",
