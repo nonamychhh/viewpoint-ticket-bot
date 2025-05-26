@@ -224,10 +224,11 @@ emojis_keyboard = InlineKeyboardMarkup(
     ]
 )
 
+#клавиатура чисто с кнопкой назад
 keyboard_back = InlineKeyboardMarkup(
     inline_keyboard=[[button_back]]
 )
-
+#клавиатура для отмены заявки
 cancel_markup = InlineKeyboardMarkup(
     inline_keyboard=[[cancel_button]]
 )
