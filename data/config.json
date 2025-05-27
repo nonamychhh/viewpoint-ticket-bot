@@ -4,6 +4,7 @@
     "chat_mode": "single",
     "target_topic": 2,
     "cooldown": "30m",
+    "reply_mode": "free",
     "texts": {
         "greeting": "a",
         "application": "b",
