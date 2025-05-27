@@ -7,7 +7,7 @@ import handlers
 from load_config import load_config, save_config
 from middlewares import AsyncIgnoreMiddleware
 import aiosqlite
-
+from aiogram.client.default import DefaultBotProperties
 session = AiohttpSession()
 
 async def main():
@@ -23,7 +23,7 @@ async def main():
         await db.execute('CREATE INDEX IF NOT EXISTS idx_ban_end ON ignored_users(ban_end)')
         await db.commit()
 
-    bot = Bot(token=load_config()["API_TOKEN"], parse_mode=ParseMode.HTML, session=session)
+    bot = Bot(token=load_config()["API_TOKEN"], default=DefaultBotProperties(parse_mode=ParseMode.HTML), session=session)
     dp = Dispatcher(storage=MemoryStorage())
     
     # Подключение middleware

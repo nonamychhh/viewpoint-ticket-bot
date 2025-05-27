@@ -37,27 +37,52 @@ async def init_chats_db():
 async def get_or_create_topic(user: User, request_type: str, bot: Bot):
     user_id = user.id
     async with aiosqlite.connect('data/chat_links.db') as db:
+        # Получаем текущую тему пользователя для этого типа
         cursor = await db.execute(
-            "SELECT topic_id FROM chats WHERE user_id = ? AND type = ?",
-            (user_id, request_type)
+            "SELECT topic_id, type FROM chats WHERE user_id = ?",
+            (user_id,)
         )
-        topic_id = await cursor.fetchone()
+        existing_topic = await cursor.fetchone()
         
-        if topic_id is None:
-            username = f"@{user.username}" if user.username else "[Нет юзернейма]"
-            topic_name = f"{request_type} {user.full_name} {username}"
-            topic = await bot.create_forum_topic(
-                chat_id=FORUM_CHAT_ID,
-                name=topic_name
-            )
-            topic_id = topic.message_thread_id
-            await db.execute(
-                "INSERT INTO chats(user_id, topic_id, type) VALUES (?, ?, ?)",
-                (user_id, topic_id, request_type)
-            )
-            await db.commit()
+        if existing_topic:
+            topic_id, current_type = existing_topic
+            # Если тип изменился - обновляем тему
+            if current_type != request_type:
+                # Генерируем новое название темы
+                username = f"@{user.username}" if user.username else "[Нет юзернейма]"
+                new_topic_name = f"{request_type} | {user.full_name} | {username}"
+                
+                # Обновляем тему в Telegram
+                await bot.edit_forum_topic(
+                    chat_id=FORUM_CHAT_ID,
+                    message_thread_id=topic_id,
+                    name=new_topic_name
+                )
+                
+                # Обновляем запись в базе данных
+                await db.execute(
+                    "UPDATE chats SET type = ? WHERE topic_id = ?",
+                    (request_type, topic_id)
+                )
+                await db.commit()
+                
+            return topic_id
+        
+        # Создаем новую тему если не найдено
+        username = f"@{user.username}" if user.username else "[Нет юзернейма]"
+        topic_name = f"{request_type} | {user.full_name} | {username}"
+        topic = await bot.create_forum_topic(
+            chat_id=FORUM_CHAT_ID,
+            name=topic_name
+        )
+        topic_id = topic.message_thread_id
+        await db.execute(
+            "INSERT INTO chats(user_id, topic_id, type) VALUES (?, ?, ?)",
+            (user_id, topic_id, request_type)
+        )
+        await db.commit()
     
-    return topic_id[0] if isinstance(topic_id, tuple) else topic_id
+    return topic_id
 
 async def forward_to_user(topic_id: int, message: Message):
     async with aiosqlite.connect('data/chat_links.db') as db:
@@ -113,7 +138,7 @@ async def handle_start_buttons(callback: CallbackQuery, state: FSMContext):
     action = callback.data.split("-")[1]
     texts = config.get("texts")
     response = texts.get(action)
-    
+    await state.set_state(None)
     await callback.answer()
     await callback.message.answer(response, reply_markup=cancel_markup)
     await state.set_state(FormType.is_active)
@@ -153,7 +178,7 @@ async def handle_settings_buttons(callback: CallbackQuery, state: FSMContext):
             await state.set_state(SettingsChange.setting_changed)
             await state.set_data({"category": category, "subcategory": subcategory})
         else:
-            await callback.message.edit_text("😀 Настройки эмодзи:", reply_markup=emojis_keyboard)
+            await callback.message.edit_text("Настройки эмодзи:", reply_markup=emojis_keyboard)
     elif category == "messages":
         await callback.message.edit_text(
             f"Текущий интервал: {config['cooldown']}\n"
@@ -170,10 +195,22 @@ async def handle_settings_buttons(callback: CallbackQuery, state: FSMContext):
             elif subcategory == "topic":
                 config["chat_mode"] = "multiple"
                 save_config(config)
+            await callback.message.answer("Настройка успешно изменена.")
+            await callback.message.edit_text("Настройки бота:", reply_markup=settings_keyboard)
         else:
             await callback.message.edit_text("💬 Выберите режим чата:", reply_markup=chatmode_buttons)
-    elif category == "reply_ways":
-        await callback.message.edit_text("🛣️ Настройка способов ответа:", reply_markup=replyways_buttons)
+    elif category == "reply_mode":
+        if subcategory:
+            if subcategory == "free":
+                config["reply_mode"] = "free"
+                save_config(config)
+            elif subcategory == "necessary":
+                config["reply_mode"] = "necessary"
+                save_config(config)
+            await callback.message.answer("Настройка успешно изменена.")
+            await callback.message.edit_text("Настройки бота:", reply_markup=settings_keyboard)
+        else:
+            await callback.message.edit_text("🛣️ Настройка способов ответа:", reply_markup=replyways_buttons)
     else:
         await callback.message.edit_text("Настройки бота:", reply_markup=settings_keyboard)
     
@@ -201,7 +238,11 @@ async def theme_choose(msg: Message, state: FSMContext):
         if not config.get("target_topic"):
             await msg.answer("❌ Тема для заявок не настроена!")
             return
-            
+        if config.get("target_topic") == "general":
+            await msg.forward(
+            chat_id=FORUM_CHAT_ID
+            )
+            return
         await msg.forward(
             chat_id=FORUM_CHAT_ID,
             message_thread_id=config["target_topic"]
@@ -390,6 +431,7 @@ async def change_setting(msg: Message, state: FSMContext):
     await msg.answer("Шаблон успешно изменен.")
     save_config(config)
     await state.set_state(None)
+
 @router.message(Command("set_chat"))
 async def send_chat_id(msg: Message):
     global FORUM_CHAT_ID
@@ -402,9 +444,10 @@ async def send_chat_id(msg: Message):
 @router.message(Command("set_topic"))
 async def set_topic(msg: Message):
     global FORUM_CHAT_ID
-    config["target_topic"] = msg.message_thread_id
+    target_topic = msg.message_thread_id if msg.message_thread_id else "general"
+    config["target_topic"] = target_topic
     save_config(config)
-    await msg.answer(f"Тема для одиночного режима установлена! ID: {msg.message_thread_id}")
+    await msg.answer(f"Тема для одиночного режима установлена! ID: {target_topic}")
 
 @router.message(Command("settings"))
 async def settings(msg: Message,state: FSMContext):
@@ -419,5 +462,5 @@ async def handle_forum_message(message: Message):
     
     if not message.message_thread_id or message.from_user.id == message.bot.id:
         return
-    
-    await forward_to_user(message.message_thread_id, message)
+    if (config["reply_mode"] == "free") or (config["reply_mode"] == "necessary" and message.reply_to_message.message_id != message.message_thread_id):
+        await forward_to_user(message.message_thread_id, message)

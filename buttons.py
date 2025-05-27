@@ -104,18 +104,18 @@ chatmode_topic_button = InlineKeyboardButton(
 )
 
 
-replyways_button = InlineKeyboardButton(
+replymode_button = InlineKeyboardButton(
     text="Способы ответа(режим тем)",
-    callback_data="settings-reply_ways"
+    callback_data="settings-reply_mode"
 )
 #Меню способов ответа
 replyways_free_button = InlineKeyboardButton(
     text="Свободный ответ",
-    callback_data="settings-reply_ways-free"
+    callback_data="settings-reply_mode-free"
 )
 replyways_necessary_button = InlineKeyboardButton(
     text="Обязательный ответ",
-    callback_data="settings-reply_ways-necessary"
+    callback_data="settings-reply_mode-necessary"
 )
 
 emojis_button = InlineKeyboardButton(
@@ -172,7 +172,7 @@ settings_keyboard = InlineKeyboardMarkup(
         [texts_button],
         [messages_button],
         [chatmode_button],
-        [replyways_button,emojis_button]
+        [replymode_button,emojis_button]
     ]
 ) #клавиатура команды /settings
 
