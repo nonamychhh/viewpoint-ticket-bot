@@ -103,6 +103,10 @@ chatmode_topic_button = InlineKeyboardButton(
     callback_data="settings-chat_mode-topic"
 )
 
+interval_button = InlineKeyboardButton(
+    text="Интервал между сообщениями",
+    callback_data="settings-interval"
+)
 
 replymode_button = InlineKeyboardButton(
     text="Способы ответа(режим тем)",
@@ -153,6 +157,14 @@ emojis_other_button = InlineKeyboardButton(
     text="Эмодзи для остального",
     callback_data="settings-emojis-other"
 )
+emojis_banned_button = InlineKeyboardButton(
+    text="Эмодзи забаненного пользователя",
+    callback_data="settings-emojis-banned"
+)
+emojis_unbanned_button = InlineKeyboardButton(
+    text="Эмодзи разбаненного пользователя",
+    callback_data="settings-emojis-unbanned"
+)
 
 
 #Клавиатуры
@@ -172,6 +184,7 @@ settings_keyboard = InlineKeyboardMarkup(
         [texts_button],
         [messages_button],
         [chatmode_button],
+        [interval_button],
         [replymode_button,emojis_button]
     ]
 ) #клавиатура команды /settings
@@ -220,6 +233,8 @@ emojis_keyboard = InlineKeyboardMarkup(
         [emojis_event_button],          
         [emojis_reward_button],       
         [emojis_other_button],
+        [emojis_banned_button],
+        [emojis_unbanned_button],
         [button_back]
     ]
 )

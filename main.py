@@ -27,7 +27,7 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     
     # Подключение middleware
-    dp.message.middleware(AsyncIgnoreMiddleware())
+    dp.message.middleware(AsyncIgnoreMiddleware(storage=dp.storage))
     dp.include_router(handlers.router)
     
     await bot.delete_webhook(drop_pending_updates=True)
