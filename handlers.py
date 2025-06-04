@@ -17,7 +17,13 @@ config = load_config()
 FORUM_CHAT_ID = int(config.get("target_chat"))
 
 def parse_time(time_str: str) -> int:
+    if not isinstance(time_str, str):  # Ensure the input is a string
+        return 0  # Return 0 or handle the error as needed
+
     suffixes = {'m': 60, 'h': 3600, 'd': 86400}
+    if not time_str[:-1].isdigit() or time_str[-1].isdigit():
+        return 0  # Return 0 for invalid input
+
     suffix = time_str[-1].lower()
     if suffix not in suffixes:
         return 0
@@ -97,7 +103,7 @@ async def forward_to_user(topic_id: int, message: Message):
     
     user_id = result[0]
     try:
-        await message.bot.send_message(user_id, message.text)
+        await message.send_copy(user_id)
     except Exception as e:
         await message.reply(f"❌ Ошибка: {str(e)}")
 
@@ -148,7 +154,7 @@ async def handle_start_buttons(callback: CallbackQuery, state: FSMContext):
 async def handle_settings_buttons(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     is_creator = await callback.bot.get_chat_member(FORUM_CHAT_ID,user_id)
-    if is_creator.status != "creator":
+    if is_creator.status in ["member","restricted"]:
         return
     parts = callback.data.split("-")
     category = parts[1] if len(parts) > 1 else None
@@ -211,6 +217,15 @@ async def handle_settings_buttons(callback: CallbackQuery, state: FSMContext):
             await callback.message.edit_text("Настройки бота:", reply_markup=settings_keyboard)
         else:
             await callback.message.edit_text("🛣️ Настройка способов ответа:", reply_markup=replyways_buttons)
+    elif category == "interval":
+        await callback.message.edit_text(
+            f"Эта настройка отвечает за то, через сколько времени заявка сбросится."
+            f"Текущий интервал: {config['cooldown']}\n"
+            "Отправьте новый интервал (например: 30m, 2h):",
+            reply_markup=keyboard_back
+        )
+        await state.set_state(SettingsChange.setting_changed)
+        await state.set_data({"setting_type":"request-reset-interval"})
     else:
         await callback.message.edit_text("Настройки бота:", reply_markup=settings_keyboard)
     
@@ -274,7 +289,7 @@ async def theme_choose(msg: Message, state: FSMContext):
             await db.commit()
 
 
-@router.message(Command("ban"))
+@router.message(Command("ban"),F.chat.id == FORUM_CHAT_ID)
 async def ban_command(message: Message, bot: Bot):
     try:
         chat_member = await bot.get_chat_member(message.chat.id, message.from_user.id)
@@ -323,12 +338,14 @@ async def ban_command(message: Message, bot: Bot):
         timestamp = ban_end.timestamp()
         time_info = f"⏳ Срок: {time_arg}\n"
         ban_end_str = ban_end.strftime('%Y-%m-%d %H:%M:%S')
+        reason = "Причина:" + " ".join(args[2:]) if len(args) > 2 else None
     else:
         ban_end = datetime.datetime.now() + datetime.timedelta(days=365*100)
         timestamp = ban_end.timestamp()
         time_info = ""
         ban_end_str = "♾️"
-
+        reason = "Причина:" + " ".join(args[1:]) if len(args) > 1 else None
+    
     banning_user = await bot.get_chat_member(FORUM_CHAT_ID, user_id)
     if banning_user.status in ["administrator","creator"]:
         await message.reply("Вы не можете забанить администратора бота")
@@ -343,20 +360,24 @@ async def ban_command(message: Message, bot: Bot):
         await db.commit()
 
     reply_text = (
-        f"🚫 Пользователь [ID:{user_id}] будет игнорироваться до "
+        f"🚫 Пользователь [ID:{user_id}] будет забанен до "
         f"{ban_end_str}\n"
         f"{time_info}"
+        f"{reason}"
     )
     await message.reply(reply_text)
 
     try:
-        notification_text = (f"⛔ Вы были временно забанены до {ban_end_str}" 
-            if duration else "⛔ Вы были забанены навсегда ♾️")
+        notification_text = (f"⛔ Вы были временно забанены до {ban_end_str}\n{reason if reason else ''}" 
+            if duration else f"⛔ Вы были забанены навсегда\n{reason if reason else ''}")
         await bot.send_message(user_id, text=notification_text)
     except Exception as e:
         await message.reply(f"⚠ Не удалось уведомить пользователя: {str(e)}")
+    user_info = await bot.get_chat(user_id)
+    user = User(id=user_id, is_bot=False, first_name=user_info.first_name, last_name=user_info.last_name, username=user_info.username)
+    await get_or_create_topic(user, config["emojis"]["banned"]["emoji"], bot)
 
-@router.message(Command("unban"))
+@router.message(Command("unban"),F.chat.id == FORUM_CHAT_ID)
 async def unban_command(message: Message, bot: Bot):
     try:
         chat_member = await bot.get_chat_member(message.chat.id, message.from_user.id)
@@ -398,10 +419,14 @@ async def unban_command(message: Message, bot: Bot):
         try:
             await bot.send_message(
                 chat_id=user_id,
-                text="🎉 Ваш бан был снят! Теперь вы снова можете отправлять сообщения"
+                text="Ваша блокировка была снята."  
             )
         except Exception as e:
             await message.reply(f"⚠ Не удалось уведомить пользователя: {str(e)}")
+    
+        user_info = await bot.get_chat(user_id)
+        user = User(id=user_id, is_bot=False, first_name=user_info.first_name, last_name=user_info.last_name, username=user_info.username)
+        await get_or_create_topic(user, config["emojis"]["unbanned"]["emoji"], bot)
     else:
         await message.reply("ℹ Пользователь не был забанен")
 
@@ -411,7 +436,8 @@ async def change_setting(msg: Message, state: FSMContext):
     
     if data.get("setting_type") == "confirmation_cooldown":
         new_cooldown = msg.text
-        if parse_time(new_cooldown) <= 0:
+        cooldown_value = parse_time(new_cooldown)
+        if cooldown_value is None or cooldown_value <= 0:
             await msg.answer("❌ Неверный формат времени!")
             return
             
@@ -419,7 +445,16 @@ async def change_setting(msg: Message, state: FSMContext):
         save_config(config)
         await msg.answer("✅ Интервал подтверждений обновлен!")
         return
-    
+    elif data.get("setting_type") == "request-reset-interval":
+        new_interval = msg.text
+        if parse_time(new_interval) <= 0:
+            await msg.answer("❌ Неверный формат времени!")
+            return
+            
+        config["state_timeout"] = new_interval
+        save_config(config)
+        await msg.answer("✅ Интервал сброса заявок обновлен!")
+        return
     category = data["category"]
     subcategory = data["subcategory"]
     
@@ -432,7 +467,7 @@ async def change_setting(msg: Message, state: FSMContext):
     save_config(config)
     await state.set_state(None)
 
-@router.message(Command("set_chat"))
+@router.message(Command("set_chat"),F.chat.id == FORUM_CHAT_ID)
 async def send_chat_id(msg: Message):
     global FORUM_CHAT_ID
     config = load_config()
@@ -441,7 +476,7 @@ async def send_chat_id(msg: Message):
     FORUM_CHAT_ID = msg.chat.id
     await msg.answer(f"Целевой чат установлен! ID: {msg.chat.id}")
 
-@router.message(Command("set_topic"))
+@router.message(Command("set_topic"),F.chat.id == FORUM_CHAT_ID)
 async def set_topic(msg: Message):
     global FORUM_CHAT_ID
     target_topic = msg.message_thread_id if msg.message_thread_id else "general"
@@ -449,13 +484,26 @@ async def set_topic(msg: Message):
     save_config(config)
     await msg.answer(f"Тема для одиночного режима установлена! ID: {target_topic}")
 
-@router.message(Command("settings"))
+@router.message(Command("settings"),F.chat.id == FORUM_CHAT_ID)
 async def settings(msg: Message,state: FSMContext):
     user = await msg.bot.get_chat_member(FORUM_CHAT_ID,msg.from_user.id)
-    if user.status == "creator":
+    if user.status in ["administrator","creator"]:
         await msg.answer("Настройки бота:", reply_markup=settings_keyboard)
 
-@router.message()
+@router.message(Command("help"),F.chat.id == FORUM_CHAT_ID)
+async def help_command(message: Message):
+    help_text = (
+        "Команды бота:\n"
+        "/start - Начать взаимодействие с ботом(в ЛС)\n"
+        "/settings - Настройки бота(только для создателя чата)\n"
+        "/set_chat - Установить целевой чат для заявок\n"
+        "/set_topic - Установить тему для одиночного режима\n"
+        "/ban (время(опционально)) (причина(опционально)) - Забанить пользователя\n"
+        "/unban - Разбанить пользователя\n"
+        "/help - Показать это сообщение\n"
+    )
+    await message.answer(help_text)
+@router.message(F.chat.id == FORUM_CHAT_ID)
 async def handle_forum_message(message: Message):
     if not FORUM_CHAT_ID or message.chat.id != FORUM_CHAT_ID:
         return
@@ -464,3 +512,6 @@ async def handle_forum_message(message: Message):
         return
     if (config["reply_mode"] == "free") or (config["reply_mode"] == "necessary" and message.reply_to_message.message_id != message.message_thread_id):
         await forward_to_user(message.message_thread_id, message)
+@router.message(F.chat.type == "private")
+async def handle_private_message(message: Message):
+    await message.answer(config["texts"]["greeting"], reply_markup=start_keyboard)
