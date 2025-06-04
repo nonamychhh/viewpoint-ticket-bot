@@ -5,6 +5,8 @@
     "target_topic": 2,
     "cooldown": "30m",
     "reply_mode": "free",
+    "state_timeout": "2m",
+    "state_timeout_interval": "1m",
     "texts": {
         "greeting": "a",
         "application": "b",
@@ -37,6 +39,12 @@
         },
         "other": {
             "emoji": "a"
+        },
+        "banned": {
+            "emoji": "f"
+        },
+        "unbanned": {
+            "emoji": "k"
         }
     }
 }
